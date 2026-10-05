@@ -13,7 +13,10 @@ UPLOAD_FOLDER = "penyimpanan_faktur"
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# Inisialisasi memori sesi Streamlit
+# Inisialisasi key uploader dinamis agar uploader otomatis bersih setelah simpan
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
+
 if "upload_success_msg" not in st.session_state:
     st.session_state.upload_success_msg = None
 
@@ -90,7 +93,8 @@ if st.session_state.upload_success_msg:
 uploaded_files = st.file_uploader(
     "Unggah berkas faktur PDF atau Foto dari WhatsApp (JPG, PNG)", 
     type=["pdf", "jpg", "jpeg", "png"], 
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key=f"uploader_{st.session_state.uploader_key}"
 )
 
 if uploaded_files:
@@ -101,7 +105,7 @@ if uploaded_files:
         new_filename = file.name
         file_path = os.path.join(UPLOAD_FOLDER, new_filename)
 
-        # PENGECEKAN KETAT: Jika nama file sudah ada di database atau di folder penyimpanan, TOLAK!
+        # PENGECEKAN KETAT: Jika nama file sudah ada di database atau folder, TOLAK!
         file_exists_in_csv = not df.empty and new_filename in df["Nama Berkas"].values
         file_exists_in_folder = os.path.exists(file_path)
 
@@ -109,7 +113,6 @@ if uploaded_files:
             st.error(f"❌ Berkas '{new_filename}' sudah ada di sistem! Pengunggahan dibatalkan.")
             continue
 
-        # Jika berkas belum pernah diunggah, simpan berkas fisik ke folder penyimpanan
         with open(file_path, "wb") as f:
             f.write(file.getbuffer())
 
@@ -127,6 +130,9 @@ if uploaded_files:
         df = pd.concat([df_base, new_df], ignore_index=True)
         df.to_csv(DB_FILE, index=False)
         st.session_state.upload_success_msg = f"✅ Berhasil menyimpan {len(new_data)} berkas faktur baru!"
+        
+        # Reset kotak uploader agar file yang baru diunggah otomatis dibersihkan dari layar
+        st.session_state.uploader_key += 1
         st.rerun()
 
 st.markdown("---")
@@ -253,7 +259,7 @@ if not filtered_df.empty:
 
             # Konfirmasi Hapus Faktur Ini Saja
             if st.session_state.get(f"confirm_single_{idx}", False):
-                st.warning(f"⚠️️ **Apakah Anda yakin ingin menghapus faktur `{file_name}`?**")
+                st.warning(f"⚠️ **Apakah Anda yakin ingin menghapus faktur `{file_name}`?**")
                 cy, cn = st.columns([1, 1])
                 with cy:
                     if st.button("✅ Ya, Hapus", key=f"yes_single_{idx}"):
