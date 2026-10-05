@@ -13,6 +13,10 @@ UPLOAD_FOLDER = "penyimpanan_faktur"
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+# Inisialisasi memori sesi Streamlit
+if "upload_success_msg" not in st.session_state:
+    st.session_state.upload_success_msg = None
+
 # Fungsi mengekstrak tanggal dari nama berkas WhatsApp (contoh: 2026-10-03 -> 03-10-2026)
 def extract_date_from_filename(filename):
     match = re.search(r'(\d{4})-(\d{2})-(\d{2})', str(filename))
@@ -28,7 +32,6 @@ def load_data():
         if "Tanggal Upload" not in df_loaded.columns:
             df_loaded["Tanggal Upload"] = "-"
         
-        # Lengkapi tanggal upload jika masih kosong / '-'
         for idx, row in df_loaded.iterrows():
             if str(row["Tanggal Upload"]).strip() in ["-", "", "nan"]:
                 extracted = extract_date_from_filename(row["Nama Berkas"])
@@ -51,8 +54,9 @@ def delete_invoice(file_name):
         current_df = load_data()
         updated_df = current_df[current_df["Nama Berkas"] != file_name]
         updated_df.to_csv(DB_FILE, index=False)
-        st.success(f"🗑️ Faktur '{file_name}' berhasil dihapus!")
-        st.rerun()
+
+    st.success(f"🗑️ Faktur '{file_name}' berhasil dihapus!")
+    st.rerun()
 
 # Fungsi untuk menghapus semua faktur pada tanggal tertentu
 def delete_invoices_by_date(selected_date):
@@ -77,6 +81,12 @@ df = load_data()
 
 # --- BAGIAN 1: UNGGAH FAKTUR BARU ---
 st.subheader("1. Unggah Faktur Baru")
+
+# Tampilkan notifikasi sukses jika baru selesai menyimpan
+if st.session_state.upload_success_msg:
+    st.success(st.session_state.upload_success_msg)
+    st.session_state.upload_success_msg = None
+
 uploaded_files = st.file_uploader(
     "Unggah berkas faktur PDF atau Foto dari WhatsApp (JPG, PNG)", 
     type=["pdf", "jpg", "jpeg", "png"], 
@@ -89,13 +99,17 @@ if uploaded_files:
 
     for file in uploaded_files:
         new_filename = file.name
+        file_path = os.path.join(UPLOAD_FOLDER, new_filename)
 
-        if not df.empty and new_filename in df["Nama Berkas"].values:
-            st.warning(f"⚠️️ Berkas '{new_filename}' sudah pernah disimpan.")
+        # PENGECEKAN KETAT: Jika nama file sudah ada di database atau di folder penyimpanan, TOLAK!
+        file_exists_in_csv = not df.empty and new_filename in df["Nama Berkas"].values
+        file_exists_in_folder = os.path.exists(file_path)
+
+        if file_exists_in_csv or file_exists_in_folder:
+            st.error(f"❌ Berkas '{new_filename}' sudah ada di sistem! Pengunggahan dibatalkan.")
             continue
 
-        # Simpan berkas fisik ke folder penyimpanan
-        file_path = os.path.join(UPLOAD_FOLDER, new_filename)
+        # Jika berkas belum pernah diunggah, simpan berkas fisik ke folder penyimpanan
         with open(file_path, "wb") as f:
             f.write(file.getbuffer())
 
@@ -112,7 +126,7 @@ if uploaded_files:
         df_base = df[["Nama Berkas", "Tanggal Upload"]] if "Nama Berkas" in df.columns and "Tanggal Upload" in df.columns else df
         df = pd.concat([df_base, new_df], ignore_index=True)
         df.to_csv(DB_FILE, index=False)
-        st.success("✅ Berkas faktur berhasil disimpan!")
+        st.session_state.upload_success_msg = f"✅ Berhasil menyimpan {len(new_data)} berkas faktur baru!"
         st.rerun()
 
 st.markdown("---")
@@ -135,7 +149,7 @@ if not df.empty:
         if st.button("🗑️ Hapus Semua di Tanggal Ini", key="btn_del_date_sec2"):
             st.session_state[f"confirm_date_{selected_date_to_delete}"] = True
 
-    # Modal Konfirmasi Hapus Per Tanggal (Bagian 2)
+    # Konfirmasi Hapus Per Tanggal (Bagian 2)
     if st.session_state.get(f"confirm_date_{selected_date_to_delete}", False):
         st.warning(f"⚠️ **Apakah Anda yakin ingin menghapus seluruh faktur pada tanggal `{selected_date_to_delete}`?**")
         c_yes, c_no = st.columns([1, 1])
@@ -239,7 +253,7 @@ if not filtered_df.empty:
 
             # Konfirmasi Hapus Faktur Ini Saja
             if st.session_state.get(f"confirm_single_{idx}", False):
-                st.warning(f"⚠️ **Apakah Anda yakin ingin menghapus faktur `{file_name}`?**")
+                st.warning(f"⚠️️ **Apakah Anda yakin ingin menghapus faktur `{file_name}`?**")
                 cy, cn = st.columns([1, 1])
                 with cy:
                     if st.button("✅ Ya, Hapus", key=f"yes_single_{idx}"):
