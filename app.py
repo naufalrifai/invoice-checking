@@ -7,6 +7,7 @@ import pandas as pd
 st.set_page_config(page_title="Sistem Informasi ERP Perusahaan", layout="wide")
 
 DB_FILE = "data_faktur.csv"
+DB_HUTANG_FILE = "data_faktur_hutang.csv"
 UPLOAD_FOLDER = "penyimpanan_faktur"
 
 if not os.path.exists(UPLOAD_FOLDER):
@@ -19,7 +20,10 @@ if "uploader_key" not in st.session_state:
 if "upload_success_msg" not in st.session_state:
     st.session_state.upload_success_msg = None
 
-# Fungsi mengekstrak tanggal dari nama berkas WhatsApp (contoh: 2026-10-03 -> 03-10-2026)
+if "hutang_success_msg" not in st.session_state:
+    st.session_state.hutang_success_msg = None
+
+# Fungsi mengekstrak tanggal dari nama berkas WhatsApp
 def extract_date_from_filename(filename):
     match = re.search(r'(\d{4})-(\d{2})-(\d{2})', str(filename))
     if match:
@@ -27,7 +31,7 @@ def extract_date_from_filename(filename):
         return f"{day}-{month}-{year}"
     return "-"
 
-# Fungsi untuk memuat data dari CSV
+# Memuat data faktur biasa
 def load_data():
     if os.path.exists(DB_FILE):
         df_loaded = pd.read_csv(DB_FILE)
@@ -43,7 +47,18 @@ def load_data():
     else:
         return pd.DataFrame(columns=["Nama Berkas", "Tanggal Upload"])
 
-# Fungsi untuk menghapus 1 faktur tertentu
+# Memuat data faktur hutang
+def load_data_hutang():
+    if os.path.exists(DB_HUTANG_FILE):
+        df_h = pd.read_csv(DB_HUTANG_FILE)
+        return df_h
+    else:
+        return pd.DataFrame(columns=[
+            "No Faktur", "Nama Supplier", "Nominal", 
+            "Tanggal Upload", "Tanggal Jatuh Tempo", "Nama Berkas", "Status"
+        ])
+
+# Fungsi menghapus 1 faktur biasa
 def delete_invoice(file_name):
     file_path = os.path.join(UPLOAD_FOLDER, file_name)
     if os.path.exists(file_path):
@@ -60,7 +75,7 @@ def delete_invoice(file_name):
     st.success(f"🗑️ Faktur '{file_name}' berhasil dihapus!")
     st.rerun()
 
-# Fungsi untuk menghapus semua faktur pada tanggal tertentu
+# Fungsi menghapus semua faktur pada tanggal tertentu
 def delete_invoices_by_date(selected_date):
     if os.path.exists(DB_FILE):
         current_df = load_data()
@@ -80,6 +95,7 @@ def delete_invoices_by_date(selected_date):
         st.rerun()
 
 df = load_data()
+df_hutang = load_data_hutang()
 
 # --- BILAH NAVIGASI PALING ATAS (ERP HORIZONTAL MENU) ---
 st.markdown("### 🏢 Sistem Informasi ERP Perusahaan")
@@ -106,16 +122,20 @@ dept_option = st.radio(
 
 st.markdown("---")
 
-# --- SUB MENU SESUAI DEPARTEMEN ---
+# --- SUB MENU FINANCE & ACCOUNTING ---
 if dept_option == "FINANCE & ACCOUNTING":
     sub_menu = st.selectbox(
         "📂 Pilih Menu Finance & Accounting:",
-        ["📸 Menu Input Foto Faktur"]
+        [
+            "📸 Menu Input Foto Faktur",
+            "💳 Input Faktur Hutang (Belum Dibayar)"
+        ]
     )
     
+    # -------------------------------------------------------------
+    # SUB-MENU 1: MENU INPUT FOTO FAKTUR
+    # -------------------------------------------------------------
     if sub_menu == "📸 Menu Input Foto Faktur":
-        
-        # 1. Header & Kartu Statistik Dashboard
         st.title("📊 Dashboard Management Faktur")
 
         col_m1, col_m2, col_m3 = st.columns(3)
@@ -130,14 +150,12 @@ if dept_option == "FINANCE & ACCOUNTING":
 
         st.markdown("---")
 
-        # 2. Tab Navigasi Pengelolaan Faktur
         tab1, tab2, tab3 = st.tabs([
             "📸 Unggah Faktur Baru", 
             "📅 Pengelolaan Per Tanggal", 
             "🔍 Cari & Panggil Faktur"
         ])
 
-        # TAB 1: UNGGAH FAKTUR BARU
         with tab1:
             st.subheader("📸 Menu Input Foto Faktur")
             
@@ -220,7 +238,6 @@ if dept_option == "FINANCE & ACCOUNTING":
                         st.session_state.uploader_key += 1
                         st.rerun()
 
-        # TAB 2: PENGELOLAAN PER TANGGAL
         with tab2:
             st.subheader("📅 Pengelolaan & Hapus Per Tanggal Upload")
 
@@ -279,7 +296,6 @@ if dept_option == "FINANCE & ACCOUNTING":
             else:
                 st.info("Belum ada data faktur yang tersimpan.")
 
-        # TAB 3: CARI & PANGGIL FAKTUR
         with tab3:
             st.subheader("🔍 Cari & Panggil Faktur")
 
@@ -340,7 +356,6 @@ if dept_option == "FINANCE & ACCOUNTING":
                                 if st.button(f"🗑️ Hapus Semua Faktur Tanggal {tgl}", key=f"btn_del_date_tab3_{idx}"):
                                     st.session_state[f"confirm_date_tab3_{idx}"] = True
 
-                        # Konfirmasi Hapus Faktur Ini Saja
                         if st.session_state.get(f"confirm_single_{idx}", False):
                             st.warning(f"⚠️ **Apakah Anda yakin ingin menghapus faktur `{file_name}`?**")
                             cy, cn = st.columns([1, 1])
@@ -353,7 +368,6 @@ if dept_option == "FINANCE & ACCOUNTING":
                                     st.session_state[f"confirm_single_{idx}"] = False
                                     st.rerun()
 
-                        # Konfirmasi Hapus Semua Per Tanggal
                         if st.session_state.get(f"confirm_date_tab3_{idx}", False):
                             st.warning(f"⚠️ **Apakah Anda yakin ingin menghapus SELURUH faktur pada tanggal `{tgl}`?**")
                             cyd, cnd = st.columns([1, 1])
@@ -367,6 +381,191 @@ if dept_option == "FINANCE & ACCOUNTING":
                                     st.rerun()
             else:
                 st.info("Belum ada faktur yang tersimpan atau cocok dengan nama pencarian.")
+
+    # -------------------------------------------------------------
+    # SUB-MENU 2: INPUT FAKTUR HUTANG (BELUM DIBAYAR)
+    # -------------------------------------------------------------
+    elif sub_menu == "💳 Input Faktur Hutang (Belum Dibayar)":
+        st.title("💳 Manajemen Faktur Hutang (Belum Dibayar)")
+
+        unpaid_df = df_hutang[df_hutang["Status"] == "Belum Dibayar"] if not df_hutang.empty else pd.DataFrame()
+        
+        col_h1, col_h2, col_h3 = st.columns(3)
+        with col_h1:
+            st.metric("Total Faktur Belum Dibayar", len(unpaid_df))
+        with col_h2:
+            total_nominal = unpaid_df["Nominal"].sum() if not unpaid_df.empty and "Nominal" in unpaid_df.columns else 0
+            st.metric("Total Nominal Hutang", f"Rp {total_nominal:,.0f}")
+        with col_h3:
+            total_all = len(df_hutang) if not df_hutang.empty else 0
+            st.metric("Total Riwayat Record", total_all)
+
+        st.markdown("---")
+
+        tab_h1, tab_h2 = st.tabs([
+            "📝 Input Faktur Hutang Baru",
+            "📋 Daftar & Status Faktur Hutang"
+        ])
+
+        # TAB 1: FORM INPUT HUTANG
+        with tab_h1:
+            st.subheader("📝 Form Input Faktur Hutang Baru")
+
+            if st.session_state.hutang_success_msg:
+                st.success(st.session_state.hutang_success_msg)
+                st.session_state.hutang_success_msg = None
+
+            with st.form("form_faktur_hutang"):
+                col_f1, col_f2 = st.columns(2)
+                
+                with col_f1:
+                    no_faktur = st.text_input("No. Faktur / Invoice:", placeholder="Contoh: INV-2026-001")
+                    nama_supplier = st.text_input("Nama Supplier / Vendor:", placeholder="Contoh: PT Panca Lestari")
+                    nominal_hutang = st.number_input("Nominal Hutang (Rp):", min_value=0, step=50000)
+
+                with col_f2:
+                    tgl_upload_h = st.date_input("Tanggal Upload / Nota:", value=datetime.now())
+                    tgl_jatuh_tempo = st.date_input("Tanggal Jatuh Tempo:", value=datetime.now())
+                    uploaded_bukti = st.file_uploader(
+                        "Unggah Foto / PDF Faktur (Opsional):", 
+                        type=["pdf", "jpg", "jpeg", "png"],
+                        key="uploader_bukti_hutang"
+                    )
+
+                submit_hutang = st.form_submit_button("✅ Simpan Faktur Hutang", use_container_width=True)
+
+                if submit_hutang:
+                    if not no_faktur or not nama_supplier or nominal_hutang <= 0:
+                        st.error("❌ Mohon lengkapi No. Faktur, Nama Supplier, dan Nominal Hutang!")
+                    else:
+                        file_saved_name = "-"
+                        if uploaded_bukti:
+                            file_saved_name = f"HUTANG_{no_faktur}_{uploaded_bukti.name}"
+                            f_path = os.path.join(UPLOAD_FOLDER, file_saved_name)
+                            with open(f_path, "wb") as f:
+                                f.write(uploaded_bukti.getbuffer())
+
+                        new_entry = {
+                            "No Faktur": no_faktur.strip(),
+                            "Nama Supplier": nama_supplier.strip(),
+                            "Nominal": nominal_hutang,
+                            "Tanggal Upload": tgl_upload_h.strftime("%d-%m-%Y"),
+                            "Tanggal Jatuh Tempo": tgl_jatuh_tempo.strftime("%d-%m-%Y"),
+                            "Nama Berkas": file_saved_name,
+                            "Status": "Belum Dibayar"
+                        }
+
+                        new_df_h = pd.DataFrame([new_entry])
+                        updated_h_df = pd.concat([df_hutang, new_df_h], ignore_index=True)
+                        updated_h_df.to_csv(DB_HUTANG_FILE, index=False)
+
+                        st.session_state.hutang_success_msg = f"✅ Faktur Hutang '{no_faktur}' berhasil dicatat!"
+                        st.rerun()
+
+        # TAB 2: DAFTAR HUTANG & PEMANTAUAN
+        with tab_h2:
+            st.subheader("📋 Daftar & Status Faktur Hutang")
+
+            if not df_hutang.empty:
+                col_st1, col_st2 = st.columns([2, 2])
+                with col_st1:
+                    filter_status = st.selectbox("Filter Status:", ["Belum Dibayar", "Lunas", "Semua Status"])
+                with col_st2:
+                    search_h = st.text_input("🔍 Cari (Supplier / No. Faktur):", key="search_hutang_input")
+                
+                view_df = df_hutang.copy()
+                if filter_status != "Semua Status":
+                    view_df = view_df[view_df["Status"] == filter_status]
+                
+                if search_h:
+                    s_kw = search_h.strip().lower()
+                    view_df = view_df[
+                        view_df["No Faktur"].astype(str).str.lower().str.contains(s_kw) |
+                        view_df["Nama Supplier"].astype(str).str.lower().str.contains(s_kw)
+                    ]
+
+                st.write(f"Menampilkan **{len(view_df)}** faktur hutang.")
+
+                for h_idx, h_row in view_df.iterrows():
+                    status_badge = "🔴" if h_row["Status"] == "Belum Dibayar" else "🟢"
+                    title_exp = f"{status_badge} [{h_row['Status']}] {h_row['No Faktur']} - {h_row['Nama Supplier']} | Rp {h_row['Nominal']:,.0f}"
+
+                    with st.expander(title_exp):
+                        col_det1, col_det2 = st.columns(2)
+                        
+                        with col_det1:
+                            st.markdown(f"**No. Faktur:** `{h_row['No Faktur']}`")
+                            st.markdown(f"**Nama Supplier:** `{h_row['Nama Supplier']}`")
+                            st.markdown(f"**Nominal:** `Rp {h_row['Nominal']:,.0f}`")
+                        
+                        with col_det2:
+                            st.markdown(f"**Tanggal Upload:** `{h_row['Tanggal Upload']}`")
+                            st.markdown(f"**Tanggal Jatuh Tempo:** `{h_row['Tanggal Jatuh Tempo']}`")
+                            st.markdown(f"**Status Pembayaran:** `{h_row['Status']}`")
+
+                        # Tampilkan foto / file fisik faktur jika diunggah
+                        h_file = str(h_row.get("Nama Berkas", "-"))
+                        file_path_h = os.path.join(UPLOAD_FOLDER, h_file)
+
+                        if h_file != "-" and os.path.exists(file_path_h):
+                            st.markdown("---")
+                            st.markdown("**🖼️ Foto / Berkas Faktur Asli:**")
+                            h_ext = h_file.split(".")[-1].lower()
+
+                            if h_ext in ["jpg", "jpeg", "png"]:
+                                st.image(file_path_h, caption=f"Foto Faktur: {h_file}", use_column_width=True)
+
+                            with open(file_path_h, "rb") as h_f_data:
+                                st.download_button(
+                                    label=f"📥 Unduh / Buka Berkas ({h_file})",
+                                    data=h_f_data,
+                                    file_name=h_file,
+                                    mime="application/pdf" if h_ext == "pdf" else f"image/{h_ext}",
+                                    key=f"dl_hutang_{h_idx}"
+                                )
+
+                        st.markdown("---")
+                        col_h_act1, col_h_act2 = st.columns(2)
+
+                        with col_h_act1:
+                            if h_row["Status"] == "Belum Dibayar":
+                                if st.button(f"✅ Tandai Lunas", key=f"btn_lunas_{h_idx}"):
+                                    df_hutang.at[h_idx, "Status"] = "Lunas"
+                                    df_hutang.to_csv(DB_HUTANG_FILE, index=False)
+                                    st.success(" Status faktur diubah menjadi Lunas!")
+                                    st.rerun()
+
+                        with col_h_act2:
+                            if st.button(f"🗑️ Hapus Data Hutang", key=f"btn_del_h_{h_idx}"):
+                                st.session_state[f"confirm_del_h_{h_idx}"] = True
+
+                        # Pop-Up Dialog Konfirmasi Hapus Data Hutang
+                        if st.session_state.get(f"confirm_del_h_{h_idx}", False):
+                            st.warning(f"⚠️ **Apakah Anda yakin ingin menghapus data hutang No. Faktur `{h_row['No Faktur']}` ({h_row['Nama Supplier']})?**")
+                            cy_h, cn_h = st.columns([1, 1])
+                            
+                            with cy_h:
+                                if st.button("✅ Ya, Hapus", key=f"yes_del_h_{h_idx}"):
+                                    st.session_state[f"confirm_del_h_{h_idx}"] = False
+                                    
+                                    # Hapus file fisik jika ada
+                                    if h_file != "-" and os.path.exists(file_path_h):
+                                        try:
+                                            os.remove(file_path_h)
+                                        except Exception:
+                                            pass
+                                            
+                                    df_hutang_updated = df_hutang.drop(h_idx)
+                                    df_hutang_updated.to_csv(DB_HUTANG_FILE, index=False)
+                                    st.success("🗑️ Data faktur hutang berhasil dihapus!")
+                                    st.rerun()
+                                    
+                            with cn_h:
+                                if st.button("❌ Tidak, Batal", key=f"no_del_h_{h_idx}"):
+                                    st.session_state[f"confirm_del_h_{h_idx}"] = False
+                                    st.rerun()
+            else:
+                st.info("Belum ada pencatatan faktur hutang.")
 
 else:
     st.info(f"ℹ️ Modul **{dept_option}** sedang dalam tahap pengembangan.")
