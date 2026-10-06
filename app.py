@@ -84,7 +84,6 @@ df = load_data()
 # --- BILAH NAVIGASI PALING ATAS (ERP HORIZONTAL MENU) ---
 st.markdown("### 🏢 Sistem Informasi ERP Perusahaan")
 
-# CSS Tambahan untuk Penataan Gaya Navigasi Atas ERP
 st.markdown("""
 <style>
     div[role="radiogroup"] {
@@ -97,12 +96,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Radio Button Horizontal untuk Menu Departemen ERP di Paling Atas
 dept_option = st.radio(
     "Navigasi Departemen",
     ["OLDI", "SPV", "PRINCIPAL", "WAREHOUSE", "DELIVERY", "FINANCE & ACCOUNTING", "UTILITY", "PAYROLL"],
     horizontal=True,
-    index=5,  # Default langsung aktif di FINANCE & ACCOUNTING
+    index=5,
     label_visibility="collapsed"
 )
 
@@ -155,39 +153,72 @@ if dept_option == "FINANCE & ACCOUNTING":
             )
 
             if uploaded_files:
-                new_data = []
-                today_date = datetime.now().strftime("%d-%m-%Y")
+                st.markdown("---")
+                st.info("✏️ **Pop-Up Konfirmasi Nama Berkas:** Ubah atau sesuaikan nama berkas di bawah ini sebelum disimpan.")
 
-                for file in uploaded_files:
-                    new_filename = file.name
-                    file_path = os.path.join(UPLOAD_FOLDER, new_filename)
+                with st.form("form_rename_files"):
+                    new_filename_inputs = []
+                    today_date = datetime.now().strftime("%d-%m-%Y")
 
-                    file_exists_in_csv = not df.empty and new_filename in df["Nama Berkas"].values
-                    file_exists_in_folder = os.path.exists(file_path)
+                    for f_idx, file in enumerate(uploaded_files):
+                        original_name = file.name
+                        file_ext = os.path.splitext(original_name)[1]
+                        base_name_no_ext = os.path.splitext(original_name)[0]
 
-                    if file_exists_in_csv or file_exists_in_folder:
-                        st.error(f"❌ Berkas '{new_filename}' sudah ada di sistem! Pengunggahan dibatalkan.")
-                        continue
+                        st.markdown(f"**Berkas Ke-{f_idx + 1}:** `{original_name}`")
+                        edited_name_no_ext = st.text_input(
+                            f"Nama Berkas Baru (tanpa ekstensi `{file_ext}`):",
+                            value=base_name_no_ext,
+                            key=f"rename_input_{f_idx}"
+                        )
+                        final_filename = edited_name_no_ext.strip() + file_ext
+                        new_filename_inputs.append((file, final_filename))
+                        st.write("---")
 
-                    with open(file_path, "wb") as f:
-                        f.write(file.getbuffer())
+                    col_btn1, col_btn2 = st.columns([1, 4])
+                    with col_btn1:
+                        submit_save = st.form_submit_button("✅ Simpan Faktur", use_container_width=True)
+                    with col_btn2:
+                        submit_cancel = st.form_submit_button("❌ Batal Upload", use_container_width=True)
 
-                    extracted_tgl = extract_date_from_filename(file.name)
-                    file_date = extracted_tgl if extracted_tgl != "-" else today_date
+                    if submit_save:
+                        new_data = []
+                        has_error = False
 
-                    new_data.append({
-                        "Nama Berkas": new_filename,
-                        "Tanggal Upload": file_date
-                    })
+                        for original_file, final_filename in new_filename_inputs:
+                            file_path = os.path.join(UPLOAD_FOLDER, final_filename)
 
-                if new_data:
-                    new_df = pd.DataFrame(new_data)
-                    df_base = df[["Nama Berkas", "Tanggal Upload"]] if "Nama Berkas" in df.columns and "Tanggal Upload" in df.columns else df
-                    df = pd.concat([df_base, new_df], ignore_index=True)
-                    df.to_csv(DB_FILE, index=False)
-                    st.session_state.upload_success_msg = f"✅ Berhasil menyimpan {len(new_data)} berkas faktur baru!"
-                    st.session_state.uploader_key += 1
-                    st.rerun()
+                            file_exists_in_csv = not df.empty and final_filename in df["Nama Berkas"].values
+                            file_exists_in_folder = os.path.exists(file_path)
+
+                            if file_exists_in_csv or file_exists_in_folder:
+                                st.error(f"❌ Nama berkas '{final_filename}' sudah ada di sistem! Silakan gunakan nama lain.")
+                                has_error = True
+                                break
+
+                            with open(file_path, "wb") as f:
+                                f.write(original_file.getbuffer())
+
+                            extracted_tgl = extract_date_from_filename(original_file.name)
+                            file_date = extracted_tgl if extracted_tgl != "-" else today_date
+
+                            new_data.append({
+                                "Nama Berkas": final_filename,
+                                "Tanggal Upload": file_date
+                            })
+
+                        if not has_error and new_data:
+                            new_df = pd.DataFrame(new_data)
+                            df_base = df[["Nama Berkas", "Tanggal Upload"]] if "Nama Berkas" in df.columns and "Tanggal Upload" in df.columns else df
+                            df = pd.concat([df_base, new_df], ignore_index=True)
+                            df.to_csv(DB_FILE, index=False)
+                            st.session_state.upload_success_msg = f"✅ Berhasil menyimpan {len(new_data)} berkas faktur baru!"
+                            st.session_state.uploader_key += 1
+                            st.rerun()
+
+                    if submit_cancel:
+                        st.session_state.uploader_key += 1
+                        st.rerun()
 
         # TAB 2: PENGELOLAAN PER TANGGAL
         with tab2:
