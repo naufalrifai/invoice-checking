@@ -415,6 +415,13 @@ if dept_option == "FINANCE & ACCOUNTING":
                 st.success(st.session_state.hutang_success_msg)
                 st.session_state.hutang_success_msg = None
 
+            # Unggah berkas faktur hutang (diletakkan sebelum form agar dapat dideteksi secara langsung)
+            uploaded_bukti = st.file_uploader(
+                "Unggah Foto / PDF Faktur (Opsional):", 
+                type=["pdf", "jpg", "jpeg", "png"],
+                key=f"uploader_bukti_hutang_{st.session_state.uploader_key}"
+            )
+
             with st.form("form_faktur_hutang"):
                 col_f1, col_f2 = st.columns(2)
                 
@@ -426,11 +433,21 @@ if dept_option == "FINANCE & ACCOUNTING":
                 with col_f2:
                     tgl_upload_h = st.date_input("Tanggal Upload / Nota:", value=datetime.now())
                     tgl_jatuh_tempo = st.date_input("Tanggal Jatuh Tempo:", value=datetime.now())
-                    uploaded_bukti = st.file_uploader(
-                        "Unggah Foto / PDF Faktur (Opsional):", 
-                        type=["pdf", "jpg", "jpeg", "png"],
-                        key="uploader_bukti_hutang"
-                    )
+                    
+                    # Tampilkan opsi ubah nama berkas jika ada file yang dipilih
+                    if uploaded_bukti:
+                        orig_h_name = uploaded_bukti.name
+                        h_base_name, h_ext_name = os.path.splitext(orig_h_name)
+                        
+                        st.markdown(f"✏️ **Suaikan Nama Berkas (`{h_ext_name}`):**")
+                        edited_h_base = st.text_input(
+                            f"Nama Berkas Simpan (tanpa ekstensi `{h_ext_name}`):",
+                            value=f"HUTANG_{h_base_name}",
+                            key="input_rename_hutang_file"
+                        )
+                        final_h_filename = edited_h_base.strip() + h_ext_name
+                    else:
+                        final_h_filename = "-"
 
                 submit_hutang = st.form_submit_button("✅ Simpan Faktur Hutang", use_container_width=True)
 
@@ -439,28 +456,39 @@ if dept_option == "FINANCE & ACCOUNTING":
                         st.error("❌ Mohon lengkapi No. Faktur, Nama Supplier, dan Nominal Hutang!")
                     else:
                         file_saved_name = "-"
-                        if uploaded_bukti:
-                            file_saved_name = f"HUTANG_{no_faktur}_{uploaded_bukti.name}"
+                        has_error = False
+
+                        if uploaded_bukti and final_h_filename != "-":
+                            file_saved_name = final_h_filename
                             f_path = os.path.join(UPLOAD_FOLDER, file_saved_name)
-                            with open(f_path, "wb") as f:
-                                f.write(uploaded_bukti.getbuffer())
 
-                        new_entry = {
-                            "No Faktur": no_faktur.strip(),
-                            "Nama Supplier": nama_supplier.strip(),
-                            "Nominal": nominal_hutang,
-                            "Tanggal Upload": tgl_upload_h.strftime("%d-%m-%Y"),
-                            "Tanggal Jatuh Tempo": tgl_jatuh_tempo.strftime("%d-%m-%Y"),
-                            "Nama Berkas": file_saved_name,
-                            "Status": "Belum Dibayar"
-                        }
+                            # Pengecekan duplikasi nama berkas
+                            if os.path.exists(f_path):
+                                st.error(f"❌ Berkas dengan nama '{file_saved_name}' sudah ada di sistem! Silakan gunakan nama berkas lain.")
+                                has_error = True
 
-                        new_df_h = pd.DataFrame([new_entry])
-                        updated_h_df = pd.concat([df_hutang, new_df_h], ignore_index=True)
-                        updated_h_df.to_csv(DB_HUTANG_FILE, index=False)
+                            if not has_error:
+                                with open(f_path, "wb") as f:
+                                    f.write(uploaded_bukti.getbuffer())
 
-                        st.session_state.hutang_success_msg = f"✅ Faktur Hutang '{no_faktur}' berhasil dicatat!"
-                        st.rerun()
+                        if not has_error:
+                            new_entry = {
+                                "No Faktur": no_faktur.strip(),
+                                "Nama Supplier": nama_supplier.strip(),
+                                "Nominal": nominal_hutang,
+                                "Tanggal Upload": tgl_upload_h.strftime("%d-%m-%Y"),
+                                "Tanggal Jatuh Tempo": tgl_jatuh_tempo.strftime("%d-%m-%Y"),
+                                "Nama Berkas": file_saved_name,
+                                "Status": "Belum Dibayar"
+                            }
+
+                            new_df_h = pd.DataFrame([new_entry])
+                            updated_h_df = pd.concat([df_hutang, new_df_h], ignore_index=True)
+                            updated_h_df.to_csv(DB_HUTANG_FILE, index=False)
+
+                            st.session_state.hutang_success_msg = f"✅ Faktur Hutang '{no_faktur}' berhasil dicatat dengan nama berkas '{file_saved_name}'!"
+                            st.session_state.uploader_key += 1
+                            st.rerun()
 
         # TAB 2: DAFTAR HUTANG & PEMANTAUAN
         with tab_h2:
@@ -471,101 +499,4 @@ if dept_option == "FINANCE & ACCOUNTING":
                 with col_st1:
                     filter_status = st.selectbox("Filter Status:", ["Belum Dibayar", "Lunas", "Semua Status"])
                 with col_st2:
-                    search_h = st.text_input("🔍 Cari (Supplier / No. Faktur):", key="search_hutang_input")
-                
-                view_df = df_hutang.copy()
-                if filter_status != "Semua Status":
-                    view_df = view_df[view_df["Status"] == filter_status]
-                
-                if search_h:
-                    s_kw = search_h.strip().lower()
-                    view_df = view_df[
-                        view_df["No Faktur"].astype(str).str.lower().str.contains(s_kw) |
-                        view_df["Nama Supplier"].astype(str).str.lower().str.contains(s_kw)
-                    ]
-
-                st.write(f"Menampilkan **{len(view_df)}** faktur hutang.")
-
-                for h_idx, h_row in view_df.iterrows():
-                    status_badge = "🔴" if h_row["Status"] == "Belum Dibayar" else "🟢"
-                    title_exp = f"{status_badge} [{h_row['Status']}] {h_row['No Faktur']} - {h_row['Nama Supplier']} | Rp {h_row['Nominal']:,.0f}"
-
-                    with st.expander(title_exp):
-                        col_det1, col_det2 = st.columns(2)
-                        
-                        with col_det1:
-                            st.markdown(f"**No. Faktur:** `{h_row['No Faktur']}`")
-                            st.markdown(f"**Nama Supplier:** `{h_row['Nama Supplier']}`")
-                            st.markdown(f"**Nominal:** `Rp {h_row['Nominal']:,.0f}`")
-                        
-                        with col_det2:
-                            st.markdown(f"**Tanggal Upload:** `{h_row['Tanggal Upload']}`")
-                            st.markdown(f"**Tanggal Jatuh Tempo:** `{h_row['Tanggal Jatuh Tempo']}`")
-                            st.markdown(f"**Status Pembayaran:** `{h_row['Status']}`")
-
-                        # Tampilkan foto / file fisik faktur jika diunggah
-                        h_file = str(h_row.get("Nama Berkas", "-"))
-                        file_path_h = os.path.join(UPLOAD_FOLDER, h_file)
-
-                        if h_file != "-" and os.path.exists(file_path_h):
-                            st.markdown("---")
-                            st.markdown("**🖼️ Foto / Berkas Faktur Asli:**")
-                            h_ext = h_file.split(".")[-1].lower()
-
-                            if h_ext in ["jpg", "jpeg", "png"]:
-                                st.image(file_path_h, caption=f"Foto Faktur: {h_file}", use_column_width=True)
-
-                            with open(file_path_h, "rb") as h_f_data:
-                                st.download_button(
-                                    label=f"📥 Unduh / Buka Berkas ({h_file})",
-                                    data=h_f_data,
-                                    file_name=h_file,
-                                    mime="application/pdf" if h_ext == "pdf" else f"image/{h_ext}",
-                                    key=f"dl_hutang_{h_idx}"
-                                )
-
-                        st.markdown("---")
-                        col_h_act1, col_h_act2 = st.columns(2)
-
-                        with col_h_act1:
-                            if h_row["Status"] == "Belum Dibayar":
-                                if st.button(f"✅ Tandai Lunas", key=f"btn_lunas_{h_idx}"):
-                                    df_hutang.at[h_idx, "Status"] = "Lunas"
-                                    df_hutang.to_csv(DB_HUTANG_FILE, index=False)
-                                    st.success(" Status faktur diubah menjadi Lunas!")
-                                    st.rerun()
-
-                        with col_h_act2:
-                            if st.button(f"🗑️ Hapus Data Hutang", key=f"btn_del_h_{h_idx}"):
-                                st.session_state[f"confirm_del_h_{h_idx}"] = True
-
-                        # Pop-Up Dialog Konfirmasi Hapus Data Hutang
-                        if st.session_state.get(f"confirm_del_h_{h_idx}", False):
-                            st.warning(f"⚠️ **Apakah Anda yakin ingin menghapus data hutang No. Faktur `{h_row['No Faktur']}` ({h_row['Nama Supplier']})?**")
-                            cy_h, cn_h = st.columns([1, 1])
-                            
-                            with cy_h:
-                                if st.button("✅ Ya, Hapus", key=f"yes_del_h_{h_idx}"):
-                                    st.session_state[f"confirm_del_h_{h_idx}"] = False
-                                    
-                                    # Hapus file fisik jika ada
-                                    if h_file != "-" and os.path.exists(file_path_h):
-                                        try:
-                                            os.remove(file_path_h)
-                                        except Exception:
-                                            pass
-                                            
-                                    df_hutang_updated = df_hutang.drop(h_idx)
-                                    df_hutang_updated.to_csv(DB_HUTANG_FILE, index=False)
-                                    st.success("🗑️ Data faktur hutang berhasil dihapus!")
-                                    st.rerun()
-                                    
-                            with cn_h:
-                                if st.button("❌ Tidak, Batal", key=f"no_del_h_{h_idx}"):
-                                    st.session_state[f"confirm_del_h_{h_idx}"] = False
-                                    st.rerun()
-            else:
-                st.info("Belum ada pencatatan faktur hutang.")
-
-else:
-    st.info(f"ℹ️ Modul **{dept_option}** sedang dalam tahap pengembangan.")
+                    search_h = st.text_input("🔍 Cari (Supplier / No. Faktur):
